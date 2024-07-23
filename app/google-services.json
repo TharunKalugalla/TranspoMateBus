@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "248815322265",
+    "firebase_url": "https://transpomate-4d1e1-default-rtdb.firebaseio.com",
+    "project_id": "transpomate-4d1e1",
+    "storage_bucket": "transpomate-4d1e1.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248815322265:android:975b9b1a28e8c8ab712408",
+        "android_client_info": {
+          "package_name": "com.example.transpomate"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBcnW7-ViSvAUnyxEY4PZPfhKQWqKCjSrU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248815322265:android:65ac2f0bf0f051df712408",
+        "android_client_info": {
+          "package_name": "com.example.transpomatebus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBcnW7-ViSvAUnyxEY4PZPfhKQWqKCjSrU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
