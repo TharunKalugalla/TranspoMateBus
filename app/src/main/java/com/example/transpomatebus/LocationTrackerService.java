@@ -1,37 +1,91 @@
 package com.example.transpomatebus;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
-public class LocationTrackerService extends Service implements LocationTracker.LocationCallback {
-    public static final String CHANNEL_ID = "LocationTrackerServiceChannel";
-    private LocationTracker locationTracker;
+public class LocationTrackerService extends Service implements LocationListener {
+
+    private static final String CHANNEL_ID = "LocationTrackerServiceChannel";
+    private static final int NOTIFICATION_ID = 1;
+
+    private LocationManager locationManager;
     private DatabaseReference databaseReference;
-    private String selectedRoute, selectedBusKey;
+    private FirebaseUser currentUser;
+    private String routeId;
+    private String busId;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        locationTracker = new LocationTracker(this, this);
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         databaseReference = FirebaseDatabase.getInstance().getReference();
+        currentUser = FirebaseAuth.getInstance().getCurrentUser();
 
+        if (currentUser != null) {
+            // Assuming routeId and busId are stored in user's data
+            // Fetch these values from the database
+            routeId = "101"; // Placeholder value, fetch actual value
+            busId = "bus1"; // Placeholder value, fetch actual value
+        }
+
+        createNotificationChannel();
+        startForeground(NOTIFICATION_ID, getNotification());
+
+        requestLocationUpdates();
+    }
+
+    private void requestLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // Permissions are not granted, stop the service
+            stopSelf();
+            return;
+        }
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 0, this);
+    }
+
+    private Notification getNotification() {
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this,
+                0, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Tracking Location")
+                .setContentText("Your bus location is being tracked")
+                .setSmallIcon(R.drawable.ic_location)
+                .setContentIntent(pendingIntent)
+                .build();
+    }
+
+    private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
                     CHANNEL_ID,
                     "Location Tracker Service Channel",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
+
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(serviceChannel);
@@ -41,32 +95,28 @@ public class LocationTrackerService extends Service implements LocationTracker.L
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        selectedRoute = intent.getStringExtra("selectedRoute");
-        selectedBusKey = intent.getStringExtra("selectedBusKey");
-
-        Intent notificationIntent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(this,
-                0, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Location Tracker Service")
-                .setContentText("Tracking bus location")
-                .setSmallIcon(R.drawable.ic_location)
-                .setContentIntent(pendingIntent)
-                .build();
-
-        startForeground(1, notification);
-
-        locationTracker.startLocationUpdates();
-
         return START_NOT_STICKY;
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
-        locationTracker.stopLocationUpdates();
+    public void onLocationChanged(@NonNull Location location) {
+        double latitude = location.getLatitude();
+        double longitude = location.getLongitude();
+
+        if (currentUser != null && routeId != null && busId != null) {
+            databaseReference.child("buses").child(routeId).child(busId).child("location").child("lat").setValue(latitude);
+            databaseReference.child("buses").child(routeId).child(busId).child("location").child("lng").setValue(longitude);
+        }
     }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {}
+
+    @Override
+    public void onProviderEnabled(@NonNull String provider) {}
+
+    @Override
+    public void onProviderDisabled(@NonNull String provider) {}
 
     @Nullable
     @Override
@@ -75,22 +125,13 @@ public class LocationTrackerService extends Service implements LocationTracker.L
     }
 
     @Override
-    public void onLocationUpdated(Location location) {
-        if (selectedRoute != null && selectedBusKey != null) {
-            databaseReference.child("buses").child(selectedRoute).child(selectedBusKey).child("location")
-                    .setValue(new LocationWrapper(location.getLatitude(), location.getLongitude()));
-        }
-    }
-
-    public static class LocationWrapper {
-        public double lat;
-        public double lng;
-
-        public LocationWrapper() {}
-
-        public LocationWrapper(double lat, double lng) {
-            this.lat = lat;
-            this.lng = lng;
+    public void onDestroy() {
+        super.onDestroy();
+        if (locationManager != null) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                locationManager.removeUpdates(this);
+            }
         }
     }
 }
