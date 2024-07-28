@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
@@ -44,11 +45,9 @@ public class LocationService extends Service implements LocationListener {
         databaseReference = FirebaseDatabase.getInstance().getReference();
         currentUser = FirebaseAuth.getInstance().getCurrentUser();
 
-        if (currentUser != null) {
-            // Fetch these values from the database or SharedPreferences
-            routeId = "101"; // Placeholder value, fetch actual value
-            busId = "Bus 10"; // Placeholder value, fetch actual value
-        }
+        SharedPreferences sharedPreferences = getSharedPreferences("BusPrefs", MODE_PRIVATE);
+        routeId = sharedPreferences.getString("routeId", null);
+        busId = sharedPreferences.getString("busId", null);
 
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, getNotification());
