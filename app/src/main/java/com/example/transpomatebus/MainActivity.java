@@ -1,8 +1,8 @@
 package com.example.transpomatebus;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.location.Location;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -13,11 +13,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -34,8 +29,6 @@ public class MainActivity extends AppCompatActivity {
 
     private FirebaseAuth mAuth;
     private DatabaseReference databaseReference;
-    private FusedLocationProviderClient fusedLocationClient;
-    private LocationCallback locationCallback;
 
     private FirebaseUser currentUser;
     private String userId;
@@ -59,7 +52,6 @@ public class MainActivity extends AppCompatActivity {
         mAuth = FirebaseAuth.getInstance();
         currentUser = mAuth.getCurrentUser();
         databaseReference = FirebaseDatabase.getInstance().getReference();
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
         if (currentUser != null) {
             userId = currentUser.getUid();
@@ -70,7 +62,14 @@ public class MainActivity extends AppCompatActivity {
 
         updateButton.setOnClickListener(v -> updateBusDetails());
 
-        trackLocationButton.setOnClickListener(v -> startLocationTracking());
+        trackLocationButton.setOnClickListener(v -> {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+                return;
+            }
+            startLocationTracking();
+        });
 
         stopTrackingButton.setOnClickListener(v -> stopLocationTracking());
     }
@@ -135,78 +134,49 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateBusDetails() {
-        String seats = seatsEditText.getText().toString();
-        String departureTime = departureTimeEditText.getText().toString();
+        String seats = seatsEditText.getText().toString().trim();
+        String departureTime = departureTimeEditText.getText().toString().trim();
 
         if (!seats.isEmpty() && !departureTime.isEmpty()) {
             databaseReference.child("buses").child(routeId).child(busInfo).child("seatsAvailable").setValue(Integer.parseInt(seats));
             databaseReference.child("buses").child(routeId).child(busInfo).child("departureTime").setValue(departureTime);
-            Toast.makeText(this, "Bus details updated successfully", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Bus details updated", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "Please enter all details", Toast.LENGTH_SHORT).show();
         }
     }
 
     private void startLocationTracking() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-            return;
+        if (!isTracking) {
+            Intent intent = new Intent(this, LocationService.class);
+            intent.putExtra("routeId", routeId);
+            intent.putExtra("busInfo", busInfo);
+            startService(intent);
+            Toast.makeText(this, "Location tracking started", Toast.LENGTH_SHORT).show();
+            isTracking = true;
+        } else {
+            Toast.makeText(this, "Already tracking location", Toast.LENGTH_SHORT).show();
         }
-
-        isTracking = true;
-
-        LocationRequest locationRequest = LocationRequest.create();
-        locationRequest.setInterval(5000);
-        locationRequest.setFastestInterval(2000);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(LocationResult locationResult) {
-                if (locationResult == null) {
-                    return;
-                }
-
-                for (Location location : locationResult.getLocations()) {
-                    if (location != null && isTracking) {
-                        double lat = location.getLatitude();
-                        double lng = location.getLongitude();
-
-                        databaseReference.child("buses").child(routeId).child(busInfo).child("location").child("lat").setValue(lat);
-                        databaseReference.child("buses").child(routeId).child(busInfo).child("location").child("lng").setValue(lng);
-                    }
-                }
-            }
-        };
-
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
-        Toast.makeText(this, "Location tracking started", Toast.LENGTH_SHORT).show();
     }
 
     private void stopLocationTracking() {
-        if (fusedLocationClient != null && locationCallback != null) {
-            fusedLocationClient.removeLocationUpdates(locationCallback);
-            isTracking = false;
+        if (isTracking) {
+            Intent intent = new Intent(this, LocationService.class);
+            stopService(intent);
             Toast.makeText(this, "Location tracking stopped", Toast.LENGTH_SHORT).show();
+            isTracking = false;
+        } else {
+            Toast.makeText(this, "Not tracking location", Toast.LENGTH_SHORT).show();
         }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        stopLocationTracking();
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 1) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startLocationTracking();
-            } else {
-                Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show();
-            }
+        if (requestCode == 1 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startLocationTracking();
+        } else {
+            Toast.makeText(this, "Location permission denied", Toast.LENGTH_SHORT).show();
         }
     }
 }

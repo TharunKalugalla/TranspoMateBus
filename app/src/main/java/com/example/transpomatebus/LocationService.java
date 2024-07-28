@@ -15,26 +15,21 @@ import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.util.Log;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
-import com.google.firebase.database.ValueEventListener;
 
-public class LocationTrackerService extends Service implements LocationListener {
+public class LocationService extends Service implements LocationListener {
 
-    private static final String CHANNEL_ID = "LocationTrackerServiceChannel";
+    private static final String CHANNEL_ID = "LocationServiceChannel";
     private static final int NOTIFICATION_ID = 1;
-    private static final String TAG = "LocationTrackerService";
 
     private LocationManager locationManager;
     private DatabaseReference databaseReference;
@@ -50,36 +45,21 @@ public class LocationTrackerService extends Service implements LocationListener 
         currentUser = FirebaseAuth.getInstance().getCurrentUser();
 
         if (currentUser != null) {
-            String currentUserId = currentUser.getUid();
-            databaseReference.child("buses").orderByChild("ownerId").equalTo(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
-                @Override
-                public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                    for (DataSnapshot busSnapshot : dataSnapshot.getChildren()) {
-                        busId = busSnapshot.getKey();
-                        routeId = busSnapshot.child("routeId").getValue(String.class);
-                        break;
-                    }
-                    requestLocationUpdates();
-                }
-
-                @Override
-                public void onCancelled(@NonNull DatabaseError databaseError) {
-                    Log.e(TAG, "Failed to retrieve bus ID and route ID.", databaseError.toException());
-                    stopSelf();
-                }
-            });
-        } else {
-            stopSelf();
+            // Fetch these values from the database or SharedPreferences
+            routeId = "101"; // Placeholder value, fetch actual value
+            busId = "Bus 10"; // Placeholder value, fetch actual value
         }
 
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, getNotification());
+
+        requestLocationUpdates();
     }
 
     private void requestLocationUpdates() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Location permissions are not granted.");
+            // Permissions are not granted, stop the service
             stopSelf();
             return;
         }
@@ -103,7 +83,7 @@ public class LocationTrackerService extends Service implements LocationListener 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
                     CHANNEL_ID,
-                    "Location Tracker Service Channel",
+                    "Location Service Channel",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
 
