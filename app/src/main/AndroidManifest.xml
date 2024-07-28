@@ -25,8 +25,7 @@
             android:name=".LocationTrackerService"
             android:foregroundServiceType="location"
             android:enabled="true"
-            android:exported="false"
-            android:permission="TODO" />
+            android:exported="true"/>
 
         <activity
             android:name=".RegisterActivity"

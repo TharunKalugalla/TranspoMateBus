@@ -1,8 +1,6 @@
 package com.example.transpomatebus;
 
-import android.content.Intent;
 import android.os.Bundle;
-import android.text.TextUtils;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -22,15 +20,22 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class RegisterActivity extends AppCompatActivity {
 
     private EditText emailEditText, passwordEditText, busInfoEditText;
     private Spinner routeSpinner;
     private Button registerButton;
-    private FirebaseAuth auth;
+
+    private FirebaseAuth mAuth;
     private DatabaseReference databaseReference;
-    private ArrayList<String> routeList;
+    private FirebaseUser currentUser;
+
+    private List<String> routeList;
+    private Map<String, String> routeMap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,8 +48,11 @@ public class RegisterActivity extends AppCompatActivity {
         routeSpinner = findViewById(R.id.routeSpinner);
         registerButton = findViewById(R.id.registerButton);
 
-        auth = FirebaseAuth.getInstance();
+        mAuth = FirebaseAuth.getInstance();
         databaseReference = FirebaseDatabase.getInstance().getReference();
+
+        routeList = new ArrayList<>();
+        routeMap = new HashMap<>();
 
         loadRoutes();
 
@@ -57,14 +65,19 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void loadRoutes() {
-        routeList = new ArrayList<>();
         databaseReference.child("routes").addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
-                    routeList.add(snapshot.getValue(String.class));
+                for (DataSnapshot routeSnapshot : dataSnapshot.getChildren()) {
+                    String routeKey = routeSnapshot.getKey();
+                    String routeName = routeSnapshot.getValue(String.class);
+                    String routeDisplay = routeKey + " - " + routeName;
+                    routeList.add(routeDisplay);
+                    routeMap.put(routeDisplay, routeKey);
                 }
-                ArrayAdapter<String> adapter = new ArrayAdapter<>(RegisterActivity.this, android.R.layout.simple_spinner_item, routeList);
+
+                ArrayAdapter<String> adapter = new ArrayAdapter<>(RegisterActivity.this,
+                        android.R.layout.simple_spinner_item, routeList);
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
                 routeSpinner.setAdapter(adapter);
             }
@@ -77,73 +90,40 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void registerUser() {
-        String email = emailEditText.getText().toString().trim();
-        String password = passwordEditText.getText().toString().trim();
-        String busInfo = busInfoEditText.getText().toString().trim();
-        String selectedRoute = routeSpinner.getSelectedItem().toString();
+        final String email = emailEditText.getText().toString().trim();
+        final String password = passwordEditText.getText().toString().trim();
+        final String busInfo = busInfoEditText.getText().toString().trim();
+        final String selectedRoute = routeSpinner.getSelectedItem().toString();
+        final String routeId = routeMap.get(selectedRoute);
 
-        if (TextUtils.isEmpty(email)) {
-            emailEditText.setError("Email is required");
+        if (email.isEmpty() || password.isEmpty() || busInfo.isEmpty() || routeId == null) {
+            Toast.makeText(this, "Please fill in all fields", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (TextUtils.isEmpty(password)) {
-            passwordEditText.setError("Password is required");
-            return;
-        }
-
-        if (TextUtils.isEmpty(busInfo)) {
-            busInfoEditText.setError("Bus information is required");
-            return;
-        }
-
-        auth.createUserWithEmailAndPassword(email, password).addOnCompleteListener(task -> {
+        mAuth.createUserWithEmailAndPassword(email, password).addOnCompleteListener(this, task -> {
             if (task.isSuccessful()) {
-                FirebaseUser user = auth.getCurrentUser();
-                if (user != null) {
-                    String userId = user.getUid();
-                    DatabaseReference busRef = databaseReference.child("buses").child(selectedRoute).push();
-                    Bus bus = new Bus(busInfo, 0, "", new LocationWrapper(0, 0), userId);
-                    busRef.setValue(bus);
+                currentUser = mAuth.getCurrentUser();
+                if (currentUser != null) {
+                    String userId = currentUser.getUid();
+                    DatabaseReference userRef = databaseReference.child("users").child(userId);
+                    userRef.child("email").setValue(email);
+                    userRef.child("routeId").setValue(routeId);
+                    userRef.child("busInfo").setValue(busInfo);
+
+                    DatabaseReference busRef = databaseReference.child("buses").child(routeId).child(busInfo);
+                    busRef.child("info").setValue(busInfo);
+                    busRef.child("seatsAvailable").setValue(0); // Initially 0 seats available
+                    busRef.child("departureTime").setValue(""); // Empty departure time
+                    busRef.child("location").child("lat").setValue(0); // Placeholder for initial latitude
+                    busRef.child("location").child("lng").setValue(0); // Placeholder for initial longitude
 
                     Toast.makeText(RegisterActivity.this, "Registration successful", Toast.LENGTH_SHORT).show();
-                    Intent intent = new Intent(RegisterActivity.this, MainActivity.class);
-                    startActivity(intent);
                     finish();
                 }
             } else {
-                Toast.makeText(RegisterActivity.this, "Registration failed: " + task.getException().getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(RegisterActivity.this, "Registration failed", Toast.LENGTH_SHORT).show();
             }
         });
-    }
-
-    public static class Bus {
-        public String info;
-        public int seatsAvailable;
-        public String departureTime;
-        public LocationWrapper location;
-        public String ownerId;
-
-        public Bus() {}
-
-        public Bus(String info, int seatsAvailable, String departureTime, LocationWrapper location, String ownerId) {
-            this.info = info;
-            this.seatsAvailable = seatsAvailable;
-            this.departureTime = departureTime;
-            this.location = location;
-            this.ownerId = ownerId;
-        }
-    }
-
-    public static class LocationWrapper {
-        public double lat;
-        public double lng;
-
-        public LocationWrapper() {}
-
-        public LocationWrapper(double lat, double lng) {
-            this.lat = lat;
-            this.lng = lng;
-        }
     }
 }

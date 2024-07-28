@@ -1,8 +1,8 @@
 package com.example.transpomatebus;
 
 import android.Manifest;
-import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.location.Location;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -12,8 +12,12 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -24,17 +28,20 @@ import com.google.firebase.database.ValueEventListener;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
-
     private TextView routeTextView, busInfoTextView;
     private EditText seatsEditText, departureTimeEditText;
     private Button updateButton, trackLocationButton, stopTrackingButton;
 
-    private FirebaseAuth auth;
+    private FirebaseAuth mAuth;
     private DatabaseReference databaseReference;
+    private FusedLocationProviderClient fusedLocationClient;
+    private LocationCallback locationCallback;
 
-    private String busId = "bus1"; // This should be dynamically set based on the user's bus
-    private String routeId = "101"; // This should be dynamically set based on the user's route
+    private FirebaseUser currentUser;
+    private String userId;
+    private String routeId;
+    private String busInfo;
+    private boolean isTracking;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,120 +56,157 @@ public class MainActivity extends AppCompatActivity {
         trackLocationButton = findViewById(R.id.trackLocationButton);
         stopTrackingButton = findViewById(R.id.stopTrackingButton);
 
-        auth = FirebaseAuth.getInstance();
+        mAuth = FirebaseAuth.getInstance();
+        currentUser = mAuth.getCurrentUser();
         databaseReference = FirebaseDatabase.getInstance().getReference();
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
-        loadBusDetails();
+        if (currentUser != null) {
+            userId = currentUser.getUid();
+            fetchUserData();
+        } else {
+            Toast.makeText(this, "User not logged in", Toast.LENGTH_SHORT).show();
+        }
 
         updateButton.setOnClickListener(v -> updateBusDetails());
 
-        trackLocationButton.setOnClickListener(v -> {
-            if (checkLocationPermission()) {
-                startLocationService();
-            } else {
-                requestLocationPermission();
+        trackLocationButton.setOnClickListener(v -> startLocationTracking());
+
+        stopTrackingButton.setOnClickListener(v -> stopLocationTracking());
+    }
+
+    private void fetchUserData() {
+        databaseReference.child("users").child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    routeId = snapshot.child("routeId").getValue(String.class);
+                    busInfo = snapshot.child("busInfo").getValue(String.class);
+
+                    fetchRouteInfo(routeId);
+                    busInfoTextView.setText("Bus Info: " + busInfo);
+
+                    fetchBusDetails();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Toast.makeText(MainActivity.this, "Failed to fetch user data", Toast.LENGTH_SHORT).show();
             }
         });
-
-        stopTrackingButton.setOnClickListener(v -> stopService(new Intent(MainActivity.this, LocationTrackerService.class)));
     }
 
-    private boolean checkLocationPermission() {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    private void fetchRouteInfo(String routeId) {
+        databaseReference.child("routes").child(routeId).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    String routeName = snapshot.getValue(String.class);
+                    routeTextView.setText("Route: " + routeId + " - " + routeName);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Toast.makeText(MainActivity.this, "Failed to fetch route info", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
-    private void requestLocationPermission() {
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
-                LOCATION_PERMISSION_REQUEST_CODE);
+    private void fetchBusDetails() {
+        databaseReference.child("buses").child(routeId).child(busInfo).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    long seatsAvailable = snapshot.child("seatsAvailable").getValue(Long.class);
+                    String departureTime = snapshot.child("departureTime").getValue(String.class);
+
+                    seatsEditText.setText(String.valueOf(seatsAvailable));
+                    departureTimeEditText.setText(departureTime);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Toast.makeText(MainActivity.this, "Failed to fetch bus details", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void updateBusDetails() {
+        String seats = seatsEditText.getText().toString();
+        String departureTime = departureTimeEditText.getText().toString();
+
+        if (!seats.isEmpty() && !departureTime.isEmpty()) {
+            databaseReference.child("buses").child(routeId).child(busInfo).child("seatsAvailable").setValue(Integer.parseInt(seats));
+            databaseReference.child("buses").child(routeId).child(busInfo).child("departureTime").setValue(departureTime);
+            Toast.makeText(this, "Bus details updated successfully", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Please enter all details", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void startLocationTracking() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+            return;
+        }
+
+        isTracking = true;
+
+        LocationRequest locationRequest = LocationRequest.create();
+        locationRequest.setInterval(5000);
+        locationRequest.setFastestInterval(2000);
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult == null) {
+                    return;
+                }
+
+                for (Location location : locationResult.getLocations()) {
+                    if (location != null && isTracking) {
+                        double lat = location.getLatitude();
+                        double lng = location.getLongitude();
+
+                        databaseReference.child("buses").child(routeId).child(busInfo).child("location").child("lat").setValue(lat);
+                        databaseReference.child("buses").child(routeId).child(busInfo).child("location").child("lng").setValue(lng);
+                    }
+                }
+            }
+        };
+
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
+        Toast.makeText(this, "Location tracking started", Toast.LENGTH_SHORT).show();
+    }
+
+    private void stopLocationTracking() {
+        if (fusedLocationClient != null && locationCallback != null) {
+            fusedLocationClient.removeLocationUpdates(locationCallback);
+            isTracking = false;
+            Toast.makeText(this, "Location tracking stopped", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        stopLocationTracking();
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+        if (requestCode == 1) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startLocationService();
+                startLocationTracking();
             } else {
-                Toast.makeText(this, "Location permission is required for tracking", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show();
             }
         }
-    }
-
-    private void startLocationService() {
-        startService(new Intent(MainActivity.this, LocationTrackerService.class));
-    }
-
-    private void loadBusDetails() {
-        FirebaseUser user = auth.getCurrentUser();
-        if (user != null) {
-            databaseReference.child("users").child(user.getUid()).addListenerForSingleValueEvent(new ValueEventListener() {
-                @Override
-                public void onDataChange(@NonNull DataSnapshot snapshot) {
-                    if (snapshot.exists()) {
-                        routeId = snapshot.child("routeId").getValue(String.class);
-                        busId = snapshot.child("busId").getValue(String.class);
-
-                        databaseReference.child("routes").child(routeId).addListenerForSingleValueEvent(new ValueEventListener() {
-                            @Override
-                            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                                String routeInfo = snapshot.getValue(String.class);
-                                routeTextView.setText(routeInfo);
-                            }
-
-                            @Override
-                            public void onCancelled(@NonNull DatabaseError error) {
-                                Toast.makeText(MainActivity.this, "Failed to load route info", Toast.LENGTH_SHORT).show();
-                            }
-                        });
-
-                        databaseReference.child("buses").child(routeId).child(busId).addListenerForSingleValueEvent(new ValueEventListener() {
-                            @Override
-                            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                                if (snapshot.exists()) {
-                                    String busInfo = snapshot.child("info").getValue(String.class);
-                                    busInfoTextView.setText(busInfo);
-                                } else {
-                                    Toast.makeText(MainActivity.this, "Bus details not found", Toast.LENGTH_SHORT).show();
-                                }
-                            }
-
-                            @Override
-                            public void onCancelled(@NonNull DatabaseError error) {
-                                Toast.makeText(MainActivity.this, "Failed to load bus details", Toast.LENGTH_SHORT).show();
-                            }
-                        });
-                    } else {
-                        Toast.makeText(MainActivity.this, "User details not found", Toast.LENGTH_SHORT).show();
-                    }
-                }
-
-                @Override
-                public void onCancelled(@NonNull DatabaseError error) {
-                    Toast.makeText(MainActivity.this, "Failed to load user details", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-    }
-
-    private void updateBusDetails() {
-        String availableSeats = seatsEditText.getText().toString().trim();
-        String departureTime = departureTimeEditText.getText().toString().trim();
-
-        if (availableSeats.isEmpty() || departureTime.isEmpty()) {
-            Toast.makeText(this, "Please fill in all fields", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        databaseReference.child("buses").child(routeId).child(busId).child("seatsAvailable").setValue(Integer.parseInt(availableSeats));
-        databaseReference.child("buses").child(routeId).child(busId).child("departureTime").setValue(departureTime)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Toast.makeText(MainActivity.this, "Bus details updated", Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(MainActivity.this, "Failed to update bus details", Toast.LENGTH_SHORT).show();
-                    }
-                });
     }
 }
