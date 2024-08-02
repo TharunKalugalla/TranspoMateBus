@@ -117,6 +117,7 @@ public class RegisterActivity extends AppCompatActivity {
                     busRef.child("departureTime").setValue(""); // Empty departure time
                     busRef.child("location").child("lat").setValue(0); // Placeholder for initial latitude
                     busRef.child("location").child("lng").setValue(0); // Placeholder for initial longitude
+                    busRef.child("location").child("bearing").setValue(0.0); // Placeholder for initial bearing
 
                     Toast.makeText(RegisterActivity.this, "Registration successful", Toast.LENGTH_SHORT).show();
                     finish();

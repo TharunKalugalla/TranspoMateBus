@@ -62,7 +62,7 @@ public class LocationService extends Service implements LocationListener {
             stopSelf();
             return;
         }
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 0, this);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500, 0, this);
     }
 
     private Notification getNotification() {
@@ -102,10 +102,13 @@ public class LocationService extends Service implements LocationListener {
     public void onLocationChanged(@NonNull Location location) {
         double latitude = location.getLatitude();
         double longitude = location.getLongitude();
+        float bearing = location.getBearing();
 
         if (currentUser != null && routeId != null && busId != null) {
-            databaseReference.child("buses").child(routeId).child(busId).child("location").child("lat").setValue(latitude);
-            databaseReference.child("buses").child(routeId).child(busId).child("location").child("lng").setValue(longitude);
+            DatabaseReference busLocationRef = databaseReference.child("buses").child(routeId).child(busId).child("location");
+            busLocationRef.child("lat").setValue(latitude);
+            busLocationRef.child("lng").setValue(longitude);
+            busLocationRef.child("bearing").setValue(bearing);
         }
     }
 
