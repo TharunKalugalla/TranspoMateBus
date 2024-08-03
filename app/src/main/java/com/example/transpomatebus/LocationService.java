@@ -102,12 +102,14 @@ public class LocationService extends Service implements LocationListener {
     public void onLocationChanged(@NonNull Location location) {
         double latitude = location.getLatitude();
         double longitude = location.getLongitude();
+        float accuracy = location.getAccuracy();
         float bearing = location.getBearing();
 
         if (currentUser != null && routeId != null && busId != null) {
             DatabaseReference busLocationRef = databaseReference.child("buses").child(routeId).child(busId).child("location");
             busLocationRef.child("lat").setValue(latitude);
             busLocationRef.child("lng").setValue(longitude);
+            busLocationRef.child("accuracy").setValue(accuracy);
             busLocationRef.child("bearing").setValue(bearing);
         }
     }

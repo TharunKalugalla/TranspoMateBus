@@ -114,10 +114,11 @@ public class RegisterActivity extends AppCompatActivity {
                     DatabaseReference busRef = databaseReference.child("buses").child(routeId).child(busInfo);
                     busRef.child("info").setValue(busInfo);
                     busRef.child("seatsAvailable").setValue(0); // Initially 0 seats available
-                    busRef.child("departureTime").setValue(""); // Empty departure time
+                    busRef.child("departureTime").setValue("00:00 AM"); // Initial departure time
                     busRef.child("location").child("lat").setValue(0); // Placeholder for initial latitude
                     busRef.child("location").child("lng").setValue(0); // Placeholder for initial longitude
                     busRef.child("location").child("bearing").setValue(0.0); // Placeholder for initial bearing
+                    busRef.child("location").child("accuracy").setValue(0.0); // Placeholder for initial accuracy
 
                     Toast.makeText(RegisterActivity.this, "Registration successful", Toast.LENGTH_SHORT).show();
                     finish();
